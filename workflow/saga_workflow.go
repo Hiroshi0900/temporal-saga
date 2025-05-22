@@ -16,23 +16,22 @@ func SagaWorkflow(ctx workflow.Context, data *model.TransactionData) (*model.Tra
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Saga Workflow started", "transactionID", data.ID)
 
+	// アクティビティのオプションを設定
 	retryPolicy := &temporal.RetryPolicy{
 		MaximumAttempts: 1,
 	}
-
-	// アクティビティのオプションを設定
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Second,
 		RetryPolicy:         retryPolicy,
 	}
 
+	// 補償アクションのオプションを設定
 	corp := temporal.RetryPolicy{
 		MaximumAttempts:    10,               // 最大試行回数
 		InitialInterval:    1 * time.Second,  // 初回の待機時間
 		MaximumInterval:    10 * time.Second, // 最大待機時間
 		BackoffCoefficient: 2.0,              // 待機時間の増加係数
 	}
-	// 補償アクションのオプションを設定
 	co := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Second,
 		RetryPolicy:         &corp,
@@ -83,7 +82,7 @@ func SagaWorkflow(ctx workflow.Context, data *model.TransactionData) (*model.Tra
 	if err != nil {
 		logger.Error("ActivityB failed", "error", err)
 
-		// Bが失敗した場合の補償処理（Aの補償を実行）
+		// Bが失敗した場合の補償処理（sgに追加されているAの補償を実行）
 		compensationErr := sg.Compensate(ctx)
 		if compensationErr != nil {
 			logger.Error("Compensation failed after ActivityB failure", "error", compensationErr)
@@ -116,13 +115,13 @@ func SagaWorkflow(ctx workflow.Context, data *model.TransactionData) (*model.Tra
 	if err != nil {
 		logger.Error("ActivityC failed", "error", err)
 
-		// Cの補償アクションを実行
+		// Cが失敗したのでsgに追加されているAとBの補償を実行
 		compensationErr := sg.Compensate(ctx)
 		if compensationErr != nil {
 			logger.Error("Compensation failed", "error", compensationErr)
 			return nil, compensationErr
 		}
-		return data, err // 元のエラーを返す
+		return data, err
 	}
 
 	return data, nil
